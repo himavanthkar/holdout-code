@@ -644,5 +644,60 @@
    "cached_in": 3072,
    "usd": 0.1480545
   }
+ },
+ "unseen": {
+  "n": 60,
+  "benchmark": "HumanEval+",
+  "results": {
+   "gen0": {
+    "hidden": 0.8166666666666667,
+    "visible": 0.8666666666666667,
+    "calls": 70,
+    "tokens": 48138
+   },
+   "naive_final": {
+    "hidden": 0.75,
+    "visible": 0.9166666666666666,
+    "calls": 71,
+    "tokens": 81044
+   },
+   "holdout_final": {
+    "hidden": 0.8166666666666667,
+    "visible": 0.8666666666666667,
+    "calls": 70,
+    "tokens": 48138
+   }
+  },
+  "seconds": 59.6
+ },
+ "efficiency": {
+  "by_model": {
+   "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B": {
+    "calls": 2447,
+    "tokens_in": 1071866,
+    "tokens_out": 309063,
+    "cached_in": 0
+   },
+   "deepseek-ai/Deepseek-V4-Flash": {
+    "calls": 9,
+    "tokens_in": 2963,
+    "tokens_out": 1071,
+    "cached_in": 768
+   },
+   "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B": {
+    "calls": 8,
+    "tokens_in": 11200,
+    "tokens_out": 2624,
+    "cached_in": 3456
+   }
+  },
+  "live_calls": 2464,
+  "disk_cache_hits": 279,
+  "tokens_in": 1086029,
+  "tokens_out": 312758,
+  "crusoe_cached_prompt_tokens": 4224,
+  "crusoe_cached_share": 0.0038893989018709443,
+  "est_usd": 0.2394947,
+  "usd_per_point_holdout_unseen_gain": null
  }
 }

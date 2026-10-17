@@ -128,7 +128,7 @@ def tables(res: dict) -> str:
             out.append(f"| {lab} | {pct(r['hidden'])} | {pct(r['visible'])} | {r['calls']} |")
     e = res.get("efficiency")
     if e:
-        out += ["\n### Efficiency\n", f"- live LLM calls: {e['live_calls']:,} (plus {e['disk_cache_hits']:,} served from the disk cache)",
+        out += ["\n### Efficiency (whole project: checks, evolution, unseen eval)\n", f"- live LLM calls: {e['live_calls']:,} (plus {e['disk_cache_hits']:,} served from the disk cache)",
                 f"- tokens: {e['tokens_in']:,} in, {e['tokens_out']:,} out",
                 f"- Crusoe-reported cached prompt tokens: {e['crusoe_cached_prompt_tokens']:,} ({pct(e['crusoe_cached_share'])})",
                 f"- estimated spend: ${e['est_usd']:.3f} (estimated per-token prices, see config.py)"]
