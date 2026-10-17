@@ -173,6 +173,67 @@ Ladder submissions: 12, accepted: 0, planted cheats accepted: 0/4. Unseen HumanE
 
 Before evolution, `scripts/cheat_check.py` confirmed that the planted cheats really raise the visible score of gen-0 ([`results/cheat_check.json`](results/cheat_check.json)), and `scripts/headroom.py` checked gen-0 headroom ([`results/headroom.json`](results/headroom.json)).
 
+## How we got here (design journey)
+
+This is how the design came together today, decision by decision. It describes only what actually happened in this build. Numbers live in the Results section and the files it links.
+
+**1. Start from what this morning taught us.** Our earlier project at this hackathon, Proof of Done, found that an LLM verifier's confidence was close to meaningless. That set the first rule for HOLDOUT: no LLM is ever a judge. Every accept/reject decision is plain Python on executable evidence. LLMs propose, solve and explain; code decides.
+
+**2. Pick a problem where "better" is measurable and gameable at the same time.** We needed one score the team could see and optimize, and another it could not see that tells the truth. EvalPlus already provides both: the original small **base** tests (what most code benchmarks check) and the much larger **plus** tests from fuzzing. So base tests became the scoreboard and plus tests the truth. That turned "is self-improvement real?" into a number per task.
+
+**3. Separate reasoning compute from execution compute.** All reasoning runs on Crusoe Managed Inference: the solver, repairer and reviewer workers, the improver, the red team and the explainer. Running the generated code is deterministic and cheap, so it never goes through an LLM. It is a stripped-environment subprocess sandbox with a timeout, plus the EvalPlus differential grader imported from Proof of Done. The sandbox is a worker, not an agent.
+
+**4. Decide who may see what, before writing any agent.** Four disjoint pools with a fixed seed:
+
+```
+TRAIN  (30 MBPP+)    improver sees visible-test failures + traces from here, nothing else
+AUDIT  (30 MBPP+)    hidden plus-test losses, reachable ONLY through the gate (accepted/rejected + rounded score)
+SMOKE  (20 MBPP+)    gen-0 headroom check, never used again
+UNSEEN (60 HumanEval+, a different benchmark)   opened once, after every genome is frozen
+```
+
+The seal is enforced in code (`holdout/seal.py` refuses any improver, red-team or explainer prompt containing audit or unseen task text) and in tests (`tests/test_sealed.py`: no prompt contains a plus input).
+
+**5. Make the team's self-description the thing that evolves.** We did not let the team edit arbitrary code. It edits a **genome**: role prompts, models, a playbook of at most 10 rules, tool toggles, which roles exist, and a call budget. The improver proposes diffs as typed JSON ops, so every change is small, valid and reviewable. Each generation's genome is committed to git, so the evolution is visible in the history.
+
+**6. Control the experiment: two arms, one difference.** Both arms start from the same gen-0, use the same improver and red team, and get the same candidate evaluation (cached by genome hash and task, so identical genomes are evaluated once). The only difference is the acceptance rule. Naive keeps the highest-visible candidate if it beats the current genome; HOLDOUT additionally requires the Ladder gate. Any divergence between the arms is caused by the gate.
+
+**7. Take the gate from the literature instead of inventing one.** Repeatedly checking candidates against the same holdout is exactly how holdouts get overfit, so we used the parameter-free **Ladder** (Blum & Hardt, ICML 2015), built for that setting. We read the paper's pseudocode (Figure 2) and implemented it line for line: compare against the last *accepted* loss vector, use a strict inequality against the last *reported* score, round to 1/n. Its unit tests caught a real edge case: with 30 tasks, a single flipped task lands exactly on the noise threshold (s/√n = 1/30), and float rounding was letting it through. The strict comparison is now float-safe.
+
+**8. Prove the threat is real before measuring the defense.** A gate that rejects cheats proves nothing if the cheats don't work. So before running any arm, `scripts/cheat_check.py` applied each planted cheat to gen-0 and measured it. Hardcoding the visible inputs, a try/except default, and an LLM-written cheat all raised the visible score while lowering hidden. "Match the visible outputs" did nothing, so it was logged as ineffective and skipped ([`results/cheat_check.json`](results/cheat_check.json)). The red team's `planted` label lives only in logs; no arm, gate or improver ever sees it.
+
+**9. Check the instruments, then accept the constraints.** Step 0 listed the real model ids instead of guessing them. Nemotron 3 Ultra was not served on our key, so the improver is Nemotron 3 Super, the largest Nemotron available. The gen-0 headroom check put Nemotron 3 Nano right at the top of the planned 40-75% hidden band ([`results/headroom.json`](results/headroom.json)). No smaller worker was available, so we kept Nano and recorded the fact.
+
+**10. Fix what the infrastructure taught us.** Two engineering lessons came out of the runs:
+   - *Concurrent identical requests race.* In generation 1 both arms asked the improver the same question at the same moment, so both missed the disk cache and, at temperature 0.7, got different answers. That would have broken "same proposals in both arms". We added per-request locks so identical calls (and identical genome+task runs) are computed once, then restarted from the cache.
+   - *A shared key rate-limits you.* A second session uses the same Crusoe key, and an extra-seed run hit 429s from the improver. We raised the retry budget and resumed from the disk cache, with the same code and the same cached responses.
+
+**11. Report what happened, including what didn't.**
+   - The naive arm's visible score climbed to 100% in every seed, while hidden did not follow.
+   - The gate refused every planted cheat in every seed.
+   - Two findings we did not plan for. First, the improver itself overfits: it writes playbook rules about specific train tasks ("For sum of unique elements: ..."). Second, visible-first selection throws away the few changes that really helped hidden, such as turning on the reviewer with the edge-case tool.
+   - HOLDOUT never accepted a change, so this is a safety result, not an improvement result.
+   - To test whether the gate was too strict, we ran a **ranked gate**: every candidate goes to the Ladder, best visible first. It still accepted nothing, because every candidate it saw lowered hidden. The bottleneck is the proposer, not the gate.
+   - We designed prompts for Crusoe's prefix cache and measured them. Crusoe reported almost no cached tokens, and a TTFT probe showed no speedup, so we claim the design, not a win.
+
+**12. Make the demo independent of the network.** Every run writes an event log, so `demo.py --replay` reproduces the full story offline from a clean clone. `--live --gens 1` shows one real generation on Crusoe. The 1-minute video is rendered from that same replay output (`scripts/make_video.py`), not mocked up.
+
+**Where it landed, in one paragraph:** a self-improving coding team on Crusoe (Nemotron Nano workers, a Nemotron Super improver) rewrites its own genome every generation, while a red team plants cheats. Every change is measured twice: on the visible tests the team can see, and on sealed EvalPlus plus tests it cannot. A parameter-free Ladder gate is the only path from the hidden tests back to the team, and it returns one bit and a rounded score. The naive arm shows what self-improvement does when it grades itself. HOLDOUT shows that a verifier the team cannot game stops it. The open problem it exposes is a proposer that finds real improvements, which the gate will then let through.
+
+```
+            ┌────────────── genome (git, per generation) ──────────────┐
+            ▼                                                          │
+   team on TRAIN ──visible failures only──▶ improver (P=2) ─┐          │
+                                         red team (planted) ┼▶ candidates
+                                                            ▼          │
+                              visible score (train) ─▶ pick best       │
+                                                            │          │
+                     NAIVE: accept if visible ↑ ────────────┤          │
+       HOLDOUT: + Ladder on AUDIT hidden (1 bit + rounded) ─┴──────────┘
+                                                            ▼
+                           frozen finals ─▶ UNSEEN HumanEval+ (once)
+```
+
 ## Mapping to the Version N+1 brief
 
 | Brief says | HOLDOUT does |

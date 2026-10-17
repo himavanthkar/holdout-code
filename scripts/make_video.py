@@ -5,6 +5,7 @@ snapshot to PNG (rich SVG -> rsvg-convert), lays the frames on the narration tim
 the voiceover.
 
   python scripts/make_video.py [voiceover.m4a] [--out video/holdout_demo.mp4]
+  python scripts/make_video.py ~/Downloads/notebooklm.wav --match-audio --max 75   # stretch picture to the audio
 """
 import argparse
 import io
@@ -47,7 +48,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("audio", nargs="?", default=str(ROOT / "video" / "voiceover_say.m4a"))
     ap.add_argument("--out", default=str(ROOT / "video" / "holdout_demo.mp4"))
+    ap.add_argument("--match-audio", action="store_true", help="scale the picture timeline to the audio length")
+    ap.add_argument("--max", type=float, default=75.0, help="with --match-audio: longest allowed video (s)")
     a = ap.parse_args()
+    if a.match_audio and Path(a.audio).exists():
+        target = min(dur(a.audio), a.max)
+        k = target / sum(PLAN.values())
+        for key in PLAN:
+            PLAN[key] *= k
     FR.mkdir(parents=True, exist_ok=True)
     for f in FR.glob("*"):
         f.unlink()
