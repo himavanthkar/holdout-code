@@ -85,6 +85,33 @@ if seeds:
              "| seed | gen-0 visible / hidden | naive final visible / hidden | HOLDOUT final visible / hidden | "
              "naive planted accepted | HOLDOUT planted accepted | unseen hidden: gen-0 / naive / HOLDOUT |",
              "|---|---|---|---|---|---|---|", row0] + seeds + [""]
+rk = ROOT / "runs" / "ranked17" / "results.json"
+if rk.exists():
+    r = json.loads(rk.read_text())
+    hg = r["arms"]["holdout"]
+    subs = [x for x in r["gate_log"] if x["arm"] == "holdout" and x["verdict"] not in ("not selected (lower visible score)",)
+            and not x["verdict"].startswith("no candidate")]
+    ru = r.get("unseen", {}).get("results")
+    body += ["### Extra run: ranked gate (seed 17, " + str(r["config"]["generations"]) + " generations, files under `runs/ranked17/`)\n",
+             "Same code and seed, but the HOLDOUT arm sends every candidate that does not lower the visible score to the "
+             "Ladder, best visible first, until one passes (the main run sends only the top-visible one). The Ladder was "
+             "designed for many adaptive submissions; each one is a round.\n",
+             "| gen | HOLDOUT-ranked visible | HOLDOUT-ranked hidden (audit) | change |", "|---|---|---|---|"]
+    for g in hg:
+        ch = "start" if g["gen"] == 0 else ((("**planted** " if g.get("accepted_planted") else "") + (g.get("accepted_ops") or "")[:80])
+                                             if g.get("accepted") else f"kept ({g['reason']})")
+        body.append(f"| {g['gen']} | {p(g['train_visible'])} | {p(g['audit_hidden'])} | {ch} |")
+    nacc = sum(1 for x in subs if x["accepted"])
+    body += ["", f"Ladder submissions: {len(subs)}, accepted: {nacc}, planted cheats accepted: "
+                 f"{sum(1 for x in r['planted'] if x['arm'] == 'holdout' and x['accepted'])}/"
+                 f"{sum(1 for x in r['planted'] if x['arm'] == 'holdout')}."
+             + (f" Unseen HumanEval+ hidden: gen-0 {p(ru['gen0']['hidden'])}, HOLDOUT-ranked final "
+                f"{p(ru['holdout_final']['hidden'])}." if ru else " Unseen eval: not run.")
+             + (f" Every submitted candidate changed audit hidden by {min(100 * x['audit_hidden_gain'] for x in subs):+.1f} to "
+                f"{max(100 * x['audit_hidden_gain'] for x in subs):+.1f} points, so giving the gate more candidates did not "
+                f"help: from gen-0, the proposer never offered a change that was really better. The bottleneck is the "
+                f"proposer, not the gate." if subs and not nacc and max(x["audit_hidden_gain"] for x in subs) <= 0 else ""), ""]
+
 body += ["### What the improver did on its own (no planted label)\n",
          f"- {len(imp)} improver candidates across both arms; {len(imp_up)} raised the visible score, and "
          f"{len(imp_fake)} of those did not raise the hidden audit score (mostly train-task-specific playbook rules "

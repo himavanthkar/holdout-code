@@ -86,7 +86,8 @@ def next_cheat(arm_state: dict, cur: dict, gen: int) -> tuple[dict, dict]:
     return {}, {"ineffective": log}
 
 
-def run(gens: int = C.GENERATIONS, commit: bool = False, run_id: str | None = None, live: bool = False) -> dict:
+def run(gens: int = C.GENERATIONS, commit: bool = False, run_id: str | None = None, live: bool = False,
+        ranked: bool = False) -> dict:
     """live=True (demo.py --live): genomes and results stay inside runs/<id>/, never touching the committed ones."""
     run_id = run_id or time.strftime("evolve_%Y%m%d_%H%M%S")
     R = Run(run_id)
@@ -150,7 +151,21 @@ def run(gens: int = C.GENERATIONS, commit: bool = False, run_id: str | None = No
 
             best = max(cands, key=lambda c: (c["eval"]["train"]["visible"], -c["eval"]["train"]["calls"])) if cands else None
             accepted, verdict = False, None
-            if best and best["visible_gain"] > 0:
+            gate_reasons = {}
+            if arm == "holdout" and ranked:
+                # ranked variant: every candidate that keeps the visible score goes to the Ladder, best visible first
+                order = sorted([c for c in cands if c["visible_gain"] >= 0],
+                               key=lambda c: (-c["eval"]["train"]["visible"], c["eval"]["train"]["calls"]))
+                reason = "no candidate keeps the visible score"
+                for c in order:
+                    v = ladder.submit(c["eval"]["audit"]["losses"])
+                    gate_reasons[id(c)] = v.reason
+                    best, reason = c, v.reason
+                    verdict = {"accepted": v.accepted, "reported_score": v.reported_score, "reason": v.reason}
+                    if v.accepted:
+                        accepted = True
+                        break
+            elif best and best["visible_gain"] > 0:
                 if arm == "naive":
                     accepted, reason = True, f"visible +{best['visible_gain']:.1%}"
                 else:
@@ -165,7 +180,7 @@ def run(gens: int = C.GENERATIONS, commit: bool = False, run_id: str | None = No
                        "ops": describe_ops(c["ops"]), "visible_gain": c["visible_gain"],
                        "audit_hidden_gain": c["audit_hidden_gain"], "selected": c is best,
                        "accepted": accepted and c is best,
-                       "verdict": (reason if c is best else "not selected (lower visible score)")}
+                       "verdict": (gate_reasons.get(id(c)) or (reason if c is best else "not selected (lower visible score)"))}
                 gate_log.append(row)
                 if c["planted"]:
                     planted.append(row)
@@ -186,7 +201,8 @@ def run(gens: int = C.GENERATIONS, commit: bool = False, run_id: str | None = No
                 st["cur"] = best["eval"]
             for c in cands:
                 outcome = "accepted" if (accepted and c is best) else "rejected"
-                note = f" (gate: {verdict['reason']})" if (arm == "holdout" and c is best and verdict) else ""
+                note = (f" (gate: {gate_reasons.get(id(c)) or verdict['reason']})"
+                        if (arm == "holdout" and (id(c) in gate_reasons or (c is best and verdict))) else "")
                 st["history"].append(f"gen {gen}: {describe_ops(c['ops'])[:160]} -> visible {c['visible_gain']:+.1%}, "
                                      f"{outcome}{note}")
             save(st["cur"]["genome"], arm, gen, groot)
@@ -205,7 +221,7 @@ def run(gens: int = C.GENERATIONS, commit: bool = False, run_id: str | None = No
 
     res = {"run_id": run_id, "seconds": round(time.time() - t0, 1),
            "config": {"worker": C.WORKER_MODEL, "improver": C.IMPROVER_MODEL, "redteam": C.REDTEAM_MODEL,
-                      "explainer": C.EXPLAINER_MODEL, "seed": C.SEED, "generations": gens, "P": C.P_IMPROVER,
+                      "explainer": C.EXPLAINER_MODEL, "seed": C.SEED, "generations": gens, "P": C.P_IMPROVER, "ranked": ranked,
                       "pools": {k: len(v) for k, v in pools().items()}},
            "gen0": s0, "arms": {a: state[a]["gens"] for a in ARMS},
            "final_hash": {a: state[a]["cur"]["hash"] for a in ARMS},
@@ -225,5 +241,6 @@ if __name__ == "__main__":
     ap.add_argument("--commit", action="store_true")
     ap.add_argument("--run-id", default=None)
     ap.add_argument("--aux", action="store_true", help="extra seed: keep genomes/results inside runs/<id>/")
+    ap.add_argument("--ranked", action="store_true", help="HOLDOUT submits candidates to the Ladder in visible order")
     a = ap.parse_args()
-    run(a.gens, a.commit, a.run_id, live=a.aux)
+    run(a.gens, a.commit, a.run_id, live=a.aux, ranked=a.ranked)

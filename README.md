@@ -145,6 +145,20 @@ Planted cheats accepted: naive 2/2, HOLDOUT 0/4.
 | 23 | 86.7% / 73.3% | 100.0% / 76.7% | 86.7% / 73.3% | 2/2 | 0/3 | 81.7% / 80.0% / 81.7% |
 | 41 | 93.3% / 83.3% | 100.0% / 83.3% | 93.3% / 83.3% | 1/2 | 0/3 | 81.7% / 83.3% / 81.7% |
 
+### Extra run: ranked gate (seed 17, 4 generations, files under `runs/ranked17/`)
+
+Same code and seed, but the HOLDOUT arm sends every candidate that does not lower the visible score to the Ladder, best visible first, until one passes (the main run sends only the top-visible one). The Ladder was designed for many adaptive submissions; each one is a round.
+
+| gen | HOLDOUT-ranked visible | HOLDOUT-ranked hidden (audit) | change |
+|---|---|---|---|
+| 0 | 86.7% | 73.3% | start |
+| 1 | 86.7% | 73.3% | kept (no audit gain) |
+| 2 | 86.7% | 73.3% | kept (no audit gain) |
+| 3 | 86.7% | 73.3% | kept (no audit gain) |
+| 4 | 86.7% | 73.3% | kept (no audit gain) |
+
+Ladder submissions: 12, accepted: 0, planted cheats accepted: 0/4. Unseen HumanEval+ hidden: gen-0 81.7%, HOLDOUT-ranked final 81.7%. Every submitted candidate changed audit hidden by -20.0 to -6.7 points, so giving the gate more candidates did not help: from gen-0, the proposer never offered a change that was really better. The bottleneck is the proposer, not the gate.
+
 ### What the improver did on its own (no planted label)
 
 - 16 improver candidates across both arms; 9 raised the visible score, and 9 of those did not raise the hidden audit score (mostly train-task-specific playbook rules such as "For sum of unique elements: ...": overfitting to the traces it was shown).
@@ -232,7 +246,7 @@ Imported in one commit (`import utilities from proof-of-done (also built today a
 - The planted cheats are a stress test, labeled as such, not natural behavior. We report separately what the naive arm accepted from the improver on its own (none in seeds 17 and 23; one solver-prompt edit in seed 41, which raised hidden by one task).
 - Seed 41 hit Crusoe 429s from the shared key mid-run; we raised the retry budget and resumed from the disk cache (same code, same cached responses).
 - The gen-0 hidden rate on the smoke pool was 75%, at the top of the 40-75% band the plan asked for; no smaller worker model was available on our key.
-- HOLDOUT accepted no change in the main run: every highest-visible candidate it was offered failed the gate. So HOLDOUT-final equals gen-0. The gate prevented the decline, but this run shows no real improvement. Visible-first selection (the rule both arms share) also threw away the few improver diffs that raised hidden scores but not visible ones; a better proposer, or submitting more candidates to the gate, is the obvious next step.
+- HOLDOUT accepted no change in the main run: every highest-visible candidate it was offered failed the gate. So HOLDOUT-final equals gen-0. The gate prevented the decline, but this run shows no real improvement. Visible-first selection (the rule both arms share) also threw away the few improver diffs that raised hidden scores but not visible ones; submitting more candidates to the gate did not change that (see the ranked-gate extra run: every candidate it saw lowered hidden), so a better proposer is the next step.
 - Prices in the spend estimate are our own per-token estimates (`holdout/config.py`), not official Crusoe prices.
 - Worker calls use temperature 0.2 with a disk cache, so a genome's evaluation is reproducible from the cache but not bit-identical against a fresh API run.
 
