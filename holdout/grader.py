@@ -33,7 +33,8 @@ except Exception as e:
 inputs = pickle.load(open("inputs.pkl", "rb"))
 mode = sys.argv[2]
 outs = []
-if mode == "compare":
+fails = []
+if mode in ("compare", "compare_all"):
     expected = pickle.load(open("expected.pkl", "rb"))
     atol = float(sys.argv[3])
 
@@ -115,9 +116,15 @@ for i, args in enumerate(inputs):
         exp = expected[i]
         ok = (exp[0] == "exc" and out[0] == "exc") or (exp[0] == "ok" and out[0] == "ok" and matches(args, out[1], exp[1], atol))
         if not ok:
-            print(json.dumps({"pass": False, "index": i, "input": repr(args)[:200], "got": repr(out)[:200], "expected": repr(exp)[:200]}))
+            row = {"pass": False, "index": i, "input": repr(args)[:200], "got": repr(out)[:200], "expected": repr(exp)[:200]}
+            if mode == "compare_all":
+                fails.append(row)
+                continue
+            print(json.dumps(row))
             sys.exit(0)
-if mode == "record":
+if mode == "compare_all":
+    print(json.dumps({"pass": not fails, "n": len(inputs), "fails": fails}))
+elif mode == "record":
     pickle.dump(outs, open("expected.pkl", "wb"))
     print(json.dumps({"recorded": len(outs)}))
 else:
@@ -184,4 +191,21 @@ def hidden_pass(task_id: str, code: str, dataset: str = "humaneval", timeout: fl
     if "load_error" in res:
         return {"pass": False, "reason": res["load_error"]}
     res.setdefault("pass", False)
+    return res
+
+
+def visible_check(task_id: str, code: str, dataset: str = "mbpp", timeout: float = 15) -> dict:
+    """Run code on the VISIBLE (base) inputs only. {'pass', 'n', 'n_pass', 'fails': [{index,input,got,expected}]}"""
+    t = _dataset(dataset)[task_id]
+    n = len(t["base_input"])
+    if not code or not code.strip():
+        return {"pass": False, "n": n, "n_pass": 0, "fails": [], "reason": "no code"}
+    expected = canonical_outputs(task_id, dataset)[:n]
+    res, _ = _run(code, t["entry_point"], t["base_input"], "compare_all", expected, float(t.get("atol") or 0),
+                  timeout, dataset)
+    if "load_error" in res or "fails" not in res:
+        reason = res.get("load_error") or res.get("reason", "error")
+        return {"pass": False, "n": n, "n_pass": 0, "fails": [{"index": -1, "input": "<load>", "got": reason,
+                                                                "expected": ""}], "reason": reason}
+    res["n_pass"] = n - len(res["fails"])
     return res
