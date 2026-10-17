@@ -19,3 +19,6 @@ venv/
 
 # os
 .DS_Store
+
+# demo.py --live scratch runs
+runs/live_*/

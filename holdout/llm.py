@@ -180,7 +180,7 @@ def _chat_locked(role, messages, tracker, step, max_tokens, use_cache, temp, ext
     return reply
 
 
-def _call_with_backoff(role: Role, messages, temp, max_tokens, extra, max_tries: int = 4, json_mode: bool = False) -> Reply:
+def _call_with_backoff(role: Role, messages, temp, max_tokens, extra, max_tries: int = 8, json_mode: bool = False) -> Reply:
     client = client_for(role)
     last_err = None
     for attempt in range(max_tries):
