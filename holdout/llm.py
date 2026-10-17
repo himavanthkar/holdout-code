@@ -12,12 +12,43 @@ from dataclasses import dataclass, field
 import openai
 from openai import OpenAI
 
-from .config import RUNS, Role
+from .config import CONCURRENCY, PRICES, RUNS, SPEND_CAP_USD, Role
 
 LOG_DIR = RUNS / "logs"
 CACHE_DIR = RUNS / "cache"
 _clients: dict[tuple[str, str], OpenAI] = {}
 _lock = threading.Lock()
+_inflight = threading.BoundedSemaphore(CONCURRENCY)  # the Crusoe key is shared with another session: cap at 6
+LEDGER: dict[str, dict] = {}  # model -> {calls, cache_hits, tokens_in, tokens_out, cached_in, usd}
+
+
+class SpendCapExceeded(RuntimeError):
+    """Estimated spend passed SPEND_CAP_USD: stop and tell the human."""
+
+
+def _account(model: str, reply: "Reply") -> None:
+    pin, pout = PRICES.get(model, (0.5, 2.0))
+    with _lock:
+        row = LEDGER.setdefault(model, {"calls": 0, "cache_hits": 0, "tokens_in": 0, "tokens_out": 0,
+                                        "cached_in": 0, "usd": 0.0})
+        if reply.cached:
+            row["cache_hits"] += 1
+            return
+        row["calls"] += 1
+        row["tokens_in"] += reply.tokens_in
+        row["tokens_out"] += reply.tokens_out
+        row["cached_in"] += reply.cached_in
+        row["usd"] += (reply.tokens_in * pin + reply.tokens_out * pout) / 1e6
+        total = sum(r["usd"] for r in LEDGER.values())
+    if total > SPEND_CAP_USD:
+        raise SpendCapExceeded(f"estimated spend ${total:.2f} passed the ${SPEND_CAP_USD:.0f} cap")
+
+
+def spend_summary() -> dict:
+    with _lock:
+        rows = {m: dict(r) for m, r in LEDGER.items()}
+    tot = {k: sum(r[k] for r in rows.values()) for k in ("calls", "cache_hits", "tokens_in", "tokens_out", "cached_in", "usd")}
+    return {"by_model": rows, "total": tot}
 
 
 class BudgetExceeded(RuntimeError):
@@ -60,7 +91,8 @@ class Reply:
     tokens_in: int
     tokens_out: int
     latency_s: float
-    cached: bool = False
+    cached: bool = False  # served from our disk cache
+    cached_in: int = 0  # prompt tokens Crusoe reported as KV-cache hits (prompt_tokens_details.cached_tokens)
 
     @property
     def tokens(self) -> int:
@@ -73,7 +105,7 @@ def client_for(role: Role) -> OpenAI:
         if key not in _clients:
             if not role.api_key:
                 raise RuntimeError(f"No API key for role '{role.name}'. Set CRUSOE_API_KEY in .env")
-            _clients[key] = OpenAI(base_url=role.base_url, api_key=role.api_key, max_retries=0, timeout=60)
+            _clients[key] = OpenAI(base_url=role.base_url, api_key=role.api_key, max_retries=0, timeout=90)
         return _clients[key]
 
 
@@ -124,18 +156,20 @@ def chat(
 
     if use_cache and cache_file.exists():
         d = json.loads(cache_file.read_text())
-        reply = Reply(d["text"], d["tokens_in"], d["tokens_out"], 0.0, cached=True)
+        reply = Reply(d["text"], d["tokens_in"], d["tokens_out"], 0.0, cached=True, cached_in=d.get("cached_in", 0))
     else:
         reply = _call_with_backoff(role, messages, temp, max_tokens, extra, json_mode=json_mode)
         if use_cache and reply.text:
             CACHE_DIR.mkdir(parents=True, exist_ok=True)
-            cache_file.write_text(json.dumps({"text": reply.text, "tokens_in": reply.tokens_in, "tokens_out": reply.tokens_out}))
+            cache_file.write_text(json.dumps({"text": reply.text, "tokens_in": reply.tokens_in, "tokens_out": reply.tokens_out,
+                                              "cached_in": reply.cached_in, "latency_s": reply.latency_s}))
+    _account(role.model, reply)
 
     if tracker:
         tracker.record(step or role.name, role.name, role.model, reply.latency_s, reply.tokens, reply.cached)
     _log({"ts": time.time(), "task": tracker.task_id if tracker else None, "step": step, "role": role.name,
           "model": role.model, "prompt_hash": h[:16], "tokens_in": reply.tokens_in, "tokens_out": reply.tokens_out,
-          "latency_s": round(reply.latency_s, 2), "cached": reply.cached})
+          "latency_s": round(reply.latency_s, 2), "cached": reply.cached, "cached_in": reply.cached_in})
     return reply
 
 
@@ -145,11 +179,13 @@ def _call_with_backoff(role: Role, messages, temp, max_tokens, extra, max_tries:
     for attempt in range(max_tries):
         t0 = time.time()
         try:
-            resp = client.chat.completions.create(
-                model=role.model, messages=messages, temperature=temp, max_tokens=max_tokens,
-                **({"extra_body": extra} if extra else {}),
-                **({"response_format": {"type": "json_object"}} if json_mode else {}),
-            )
+            with _inflight:
+                t0 = time.time()
+                resp = client.chat.completions.create(
+                    model=role.model, messages=messages, temperature=temp, max_tokens=max_tokens,
+                    **({"extra_body": extra} if extra else {}),
+                    **({"response_format": {"type": "json_object"}} if json_mode else {}),
+                )
             msg = resp.choices[0].message
             text = msg.content or ""
             if not text.strip():
@@ -157,7 +193,10 @@ def _call_with_backoff(role: Role, messages, temp, max_tokens, extra, max_tries:
                 d = msg.model_dump()
                 text = d.get("reasoning_content") or d.get("reasoning") or ""
             u = resp.usage
-            return Reply(text, getattr(u, "prompt_tokens", 0) or 0, getattr(u, "completion_tokens", 0) or 0, time.time() - t0)
+            details = getattr(u, "prompt_tokens_details", None)
+            cached_in = (getattr(details, "cached_tokens", 0) or 0) if details else 0
+            return Reply(text, getattr(u, "prompt_tokens", 0) or 0, getattr(u, "completion_tokens", 0) or 0,
+                         time.time() - t0, cached_in=cached_in)
         except openai.BadRequestError as e:
             if extra or json_mode:  # some deployments reject chat_template_kwargs / response_format; retry plain
                 extra, json_mode = {}, False

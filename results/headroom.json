@@ -1,0 +1,18 @@
+[
+ {
+  "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+  "visible": 0.85,
+  "hidden": 0.75,
+  "n": 20,
+  "calls": 23,
+  "seconds": 5.1,
+  "spend": {
+   "calls": 23,
+   "cache_hits": 0,
+   "tokens_in": 7386,
+   "tokens_out": 1761,
+   "cached_in": 0,
+   "usd": 0.0014430000000000003
+  }
+ }
+]
