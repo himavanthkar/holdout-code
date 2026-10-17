@@ -84,7 +84,19 @@ def _call(genome, role, user, acc, step):
     return extract_code(rep.text)
 
 
+_task_locks: dict[str, threading.Lock] = {}
+
+
 def run_task(genome: dict, dataset: str, task_id: str) -> dict:
+    """Cached by (genome hash, task id): identical genomes in both arms are evaluated once."""
+    key = f"{genome_hash(genome)}:{dataset}:{task_id}"
+    with _cache_lock:
+        lk = _task_locks.setdefault(key, threading.Lock())
+    with lk:
+        return _run_task(genome, dataset, task_id)
+
+
+def _run_task(genome: dict, dataset: str, task_id: str) -> dict:
     gh = genome_hash(genome)
     cf = TEAM_CACHE / gh / f"{dataset}_{task_id.replace('/', '_')}.json"
     if cf.exists():
@@ -131,8 +143,7 @@ def run_task(genome: dict, dataset: str, task_id: str) -> dict:
            "visible_pass": bool(vis["pass"]), "visible_n_pass": vis["n_pass"], "visible_n": vis["n"],
            "visible_fails": vis["fails"][:4], "hidden_pass": bool(hid.get("pass")), **acc, "trace": trace}
     cf.parent.mkdir(parents=True, exist_ok=True)
-    with _cache_lock:
-        cf.write_text(json.dumps(out))
+    cf.write_text(json.dumps(out))
     return out
 
 

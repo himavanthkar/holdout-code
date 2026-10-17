@@ -18,6 +18,7 @@ LOG_DIR = RUNS / "logs"
 CACHE_DIR = RUNS / "cache"
 _clients: dict[tuple[str, str], OpenAI] = {}
 _lock = threading.Lock()
+_key_locks: dict[str, threading.Lock] = {}  # identical concurrent requests are computed once, then cached
 _inflight = threading.BoundedSemaphore(CONCURRENCY)  # the Crusoe key is shared with another session: cap at 6
 LEDGER: dict[str, dict] = {}  # model -> {calls, cache_hits, tokens_in, tokens_out, cached_in, usd}
 
@@ -153,7 +154,13 @@ def chat(
         req["json_mode"] = True
     h = _hash(req)
     cache_file = CACHE_DIR / f"{h}.json"
+    with _lock:
+        klock = _key_locks.setdefault(h, threading.Lock())
+    with klock:
+        return _chat_locked(role, messages, tracker, step, max_tokens, use_cache, temp, extra, json_mode, h, cache_file)
 
+
+def _chat_locked(role, messages, tracker, step, max_tokens, use_cache, temp, extra, json_mode, h, cache_file) -> Reply:
     if use_cache and cache_file.exists():
         d = json.loads(cache_file.read_text())
         reply = Reply(d["text"], d["tokens_in"], d["tokens_out"], 0.0, cached=True, cached_in=d.get("cached_in", 0))
