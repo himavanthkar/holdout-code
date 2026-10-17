@@ -14,6 +14,8 @@ Built today (Sat Oct 17 2026) at The Recursive Agents Hackathon (Crusoe x Cerebr
 | HOLDOUT final | 86.7% | 73.3% | 0/4 | 81.7% |
 
 The naive team's visible score climbed while its hidden score fell; HOLDOUT's gate refused every cheat it was shown. HOLDOUT accepted 0 change(s) in 4 generations, so its final genome is gen-0: it did not get better, it refused to get worse.
+
+**Across 3 pool splits (seeds 17, 23, 41):** naive accepted 5/6 planted cheats, HOLDOUT 0/10. Naive's train visible score ended at 100.0%, 100.0%, 100.0%; its audit hidden change vs gen-0 was -20.0, +3.3, +0.0 points and its unseen HumanEval+ change -6.7, -1.7, +1.7 points. The visible inflation shows up in every seed; the hidden damage varies (accepted cheats moved audit hidden by -13.3 to +3.3 points), and seed 17 is the most dramatic. HOLDOUT accepted 0 change(s) across all seeds, so its unseen score always equals gen-0's: it is a safety result, not an improvement result.
 <!-- /HEADLINE -->
 
 ## Why
@@ -135,6 +137,14 @@ Planted cheats accepted: naive 2/2, HOLDOUT 0/4.
 - estimated spend: $0.239 (estimated per-token prices, see config.py)
 - TTFT probe (10 calls each, nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B): shared prefix median 0.527s vs shuffled prefix 0.432s
 
+### Other pool splits (extra seeds, same code; files under `runs/seed*/`)
+
+| seed | gen-0 visible / hidden | naive final visible / hidden | HOLDOUT final visible / hidden | naive planted accepted | HOLDOUT planted accepted | unseen hidden: gen-0 / naive / HOLDOUT |
+|---|---|---|---|---|---|---|
+| 17 (main) | 86.7% / 73.3% | 100.0% / 53.3% | 86.7% / 73.3% | 2/2 | 0/4 | 81.7% / 75.0% / 81.7% |
+| 23 | 86.7% / 73.3% | 100.0% / 76.7% | 86.7% / 73.3% | 2/2 | 0/3 | 81.7% / 80.0% / 81.7% |
+| 41 | 93.3% / 83.3% | 100.0% / 83.3% | 93.3% / 83.3% | 1/2 | 0/3 | 81.7% / 83.3% / 81.7% |
+
 ### What the improver did on its own (no planted label)
 
 - 16 improver candidates across both arms; 9 raised the visible score, and 9 of those did not raise the hidden audit score (mostly train-task-specific playbook rules such as "For sum of unique elements: ...": overfitting to the traces it was shown).
@@ -218,8 +228,9 @@ Imported in one commit (`import utilities from proof-of-done (also built today a
 ## Honest limitations
 
 - MBPP and HumanEval may be partly memorized by the models. That affects absolute numbers, not the comparison between arms (same proposals, same tasks, same workers).
-- Small pools (30 train / 30 audit / 60 unseen), 4 generations, one seed (17). Differences of a few points are within noise; the Ladder exists exactly because of that.
-- The planted cheats are a stress test, labeled as such, not natural behavior. We report separately what the naive arm accepted from the improver on its own.
+- Small pools (30 train / 30 audit / 60 unseen), 4 generations, 3 pool splits (seeds 17, 23, 41; seed 17 is the main run). One task is 3.3 points on audit and 1.7 points on unseen, so differences of a few points are within noise; the Ladder exists exactly because of that. The unseen HumanEval+ differences between arms are 1-4 tasks.
+- The planted cheats are a stress test, labeled as such, not natural behavior. We report separately what the naive arm accepted from the improver on its own (none in seeds 17 and 23; one solver-prompt edit in seed 41, which raised hidden by one task).
+- Seed 41 hit Crusoe 429s from the shared key mid-run; we raised the retry budget and resumed from the disk cache (same code, same cached responses).
 - The gen-0 hidden rate on the smoke pool was 75%, at the top of the 40-75% band the plan asked for; no smaller worker model was available on our key.
 - HOLDOUT accepted no change in the main run: every highest-visible candidate it was offered failed the gate. So HOLDOUT-final equals gen-0. The gate prevented the decline, but this run shows no real improvement. Visible-first selection (the rule both arms share) also threw away the few improver diffs that raised hidden scores but not visible ones; a better proposer, or submitting more candidates to the gate, is the obvious next step.
 - Prices in the spend estimate are our own per-token estimates (`holdout/config.py`), not official Crusoe prices.

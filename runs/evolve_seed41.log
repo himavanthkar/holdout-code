@@ -1,0 +1,31 @@
+gen-0 train visible 93.3%  audit hidden 83.3%
+───────────────────────────────── generation 1 ─────────────────────────────────
+NAIVE    ACCEPTED (visible +3.3%) visible +3.3%: add_rule: "If any visible test 
+still fails after repair, add an explicit branch at the top of the fu
+HOLDOUT  rejected (no audit gain) visible +3.3%: add_rule: "If any visible test 
+still fails after repair, add an explicit branch at the top of the fu
+spend so far ~$0.000, 0 calls, 0 tokens, 1s
+───────────────────────────────── generation 2 ─────────────────────────────────
+NAIVE    ACCEPTED (visible +3.3%) visible +3.3%: edit_prompt: "You are the 
+solver. Write a correct, complete Python function for the "
+HOLDOUT  rejected (no audit gain) visible +6.7%: add_rule: "For median of two 
+sorted arrays of equal length n: loop while count < n (not <= n//2), an
+spend so far ~$0.000, 0 calls, 0 tokens, 1s
+───────────────────────────────── generation 3 ─────────────────────────────────
+NAIVE    rejected (no candidate beats current visible score) visible +0.0%: 
+{"op": "toggle_role", "role": "reviewer", "enabled": true}
+HOLDOUT  rejected (no candidate beats current visible score) visible +0.0%: 
+add_rule: "For median of two sorted arrays of equal length n: the loop should 
+run while count < n, a
+spend so far ~$0.029, 320 calls, 165,755 tokens, 218s
+───────────────────────────────── generation 4 ─────────────────────────────────
+NAIVE    rejected (no candidate beats current visible score) visible +0.0%: 
+edit_prompt: "You are the repairer. The code below fails some visible tests. Fix
+the"
+HOLDOUT  rejected (audit gain within noise) visible +3.3%: add_rule: "For median
+of two sorted arrays of equal length n: the loop must run while count < n (not
+spend so far ~$0.066, 750 calls, 384,825 tokens, 481s
+gen0           unseen HumanEval+ hidden 81.7%  visible 86.7%
+naive_final    unseen HumanEval+ hidden 83.3%  visible 91.7%
+holdout_final  unseen HumanEval+ hidden 81.7%  visible 86.7%
+est. total spend $0.544, 6025 live calls, Crusoe cached share 0.5%

@@ -42,6 +42,26 @@ head += ["", f"The naive team's visible score climbed while its hidden score fel
              f"cheat it was shown. HOLDOUT accepted {len(hold_acc)} change(s) in {G} generations"
              + (", so its final genome is gen-0: it did not get better, it refused to get worse." if not hold_acc else ".")]
 
+allruns = [res] + [json.loads(d.read_text()) for d in sorted((ROOT / "runs").glob("seed*/results.json"))]
+if len(allruns) > 1 and all(r.get("unseen") for r in allruns):
+    P = [x for r in allruns for x in r["planted"]]
+    acc = [x for x in P if x["arm"] == "naive" and x["accepted"]]
+    vis = [r["arms"]["naive"][-1]["train_visible"] for r in allruns]
+    dh = [100 * (r["arms"]["naive"][-1]["audit_hidden"] - r["arms"]["naive"][0]["audit_hidden"]) for r in allruns]
+    du = [100 * (r["unseen"]["results"]["naive_final"]["hidden"] - r["unseen"]["results"]["gen0"]["hidden"]) for r in allruns]
+    hacc = sum(1 for r in allruns for g in r["arms"]["holdout"][1:] if g.get("accepted"))
+    sd = ", ".join(str(r["config"]["seed"]) for r in allruns)
+    head += ["", f"**Across {len(allruns)} pool splits (seeds {sd}):** naive accepted "
+             f"{len(acc)}/{sum(x['arm'] == 'naive' for x in P)} planted cheats, HOLDOUT "
+             f"{sum(x['accepted'] for x in P if x['arm'] == 'holdout')}/{sum(x['arm'] == 'holdout' for x in P)}. "
+             f"Naive's train visible score ended at {', '.join(p(v) for v in vis)}; its audit hidden change vs gen-0 was "
+             f"{', '.join(f'{v:+.1f}' for v in dh)} points and its unseen HumanEval+ change "
+             f"{', '.join(f'{v:+.1f}' for v in du)} points. The visible inflation shows up in every seed; the hidden damage "
+             f"varies (accepted cheats moved audit hidden by {min(100 * x['audit_hidden_gain'] for x in acc):+.1f} to "
+             f"{max(100 * x['audit_hidden_gain'] for x in acc):+.1f} points), and seed {allruns[0]['config']['seed']} is the "
+             f"most dramatic. HOLDOUT accepted {hacc} change(s) across all seeds, so its unseen score always equals gen-0's: "
+             f"it is a safety result, not an improvement result."]
+
 seeds = []
 for d in sorted((ROOT / "runs").glob("seed*/results.json")):
     r = json.loads(d.read_text())
