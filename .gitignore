@@ -22,3 +22,11 @@ venv/
 
 # demo.py --live scratch runs
 runs/live_*/
+
+# video assets (upload separately, not committed)
+video/*.mp4
+video/*.mov
+video/*.m4a
+video/*.aiff
+video/*.wav
+video/frames/
