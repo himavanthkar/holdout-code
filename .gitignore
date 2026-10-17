@@ -1,0 +1,21 @@
+# secrets
+.env
+.env.*
+!.env.example
+*.key
+
+# caches and raw logs (results, genomes and replay runs ARE committed as evidence)
+runs/cache/
+runs/logs/
+runs/tmp/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# os
+.DS_Store
